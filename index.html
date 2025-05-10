@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agent Chime - GL Reconciliation</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/pyodide/v0.23.4/full/pyodide.js"></script>
+    <style>
+        body {
+            font-family: 'Poppins', sans-serif;
+        }
+        .hero-section {
+            background: linear-gradient(135deg, #6B48FF, #00DDEB);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            color: white;
+        }
+        .results-section {
+            display: none;
+            padding: 2rem;
+        }
+        .tab {
+            cursor: pointer;
+            padding: 0.5rem 1rem;
+            border-bottom: 2px solid transparent;
+        }
+        .tab.active {
+            border-bottom: 2px solid #6B48FF;
+            font-weight: 600;
+        }
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
+        .infographic-img {
+            max-width: 100%;
+            margin: 1rem 0;
+        }
+        .download-btn {
+            background-color: #34D399;
+            color: white;
+            padding: 0.5rem 1rem;
+            border-radius: 0.5rem;
+            text-decoration: none;
+        }
+        .download-btn:hover {
+            background-color: #2BB981;
+        }
+    </style>
+</head>
+<body>
+    <!-- Hero Section -->
+    <section id="hero" class="hero-section">
+        <div>
+            <h1 class="text-4xl md:text-6xl font-bold mb-4">Agent Chime</h1>
+            <p class="text-xl mb-6">Hi, I’m Agent Chime, how can I be of help to you?</p>
+            <div class="bg-white p-6 rounded-lg shadow-lg max-w-md mx-auto">
+                <div class="space-y-4">
+                    <div>
+                        <label for="bank" class="block text-gray-700 font-semibold">Bank</label>
+                        <select id="bank" class="w-full p-2 border rounded">
+                            <option value="Bank A">Bank A</option>
+                            <option value="Bank B">Bank B</option>
+                            <option value="Bank C">Bank C</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="branch" class="block text-gray-700 font-semibold">Branch Code</label>
+                        <select id="branch" class="w-full p-2 border rounded">
+                            <option value="BR001">BR001</option>
+                            <option value="BR002">BR002</option>
+                            <option value="BR003">BR003</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="period" class="block text-gray-700 font-semibold">Reconciliation Period</label>
+                        <select id="period" class="w-full p-2 border rounded">
+                            <option value="2025-02">February 2025</option>
+                            <option value="2025-01">January 2025</option>
+                            <option value="2024-12">December 2024</option>
+                        </select>
+                    </div>
+                    <button id="reconcile-btn" class="w-full bg-green-500 text-white py-2 rounded hover:bg-green-600 transition">Reconcile</button>
+                </div>
+            </div>
+            <div id="reconcile-message" class="mt-6 hidden">
+                <p class="text-2xl font-semibold">100% Reconciliation Done!</p>
+                <button id="view-results-btn" class="mt-4 bg-yellow-500 text-white py-2 px-4 rounded hover:bg-yellow-600 transition">View Results</button>
+            </div>
+        </div>
+    </section>
+
+    <!-- Results Section -->
+    <section id="results" class="results-section">
+        <div class="max-w-4xl mx-auto">
+            <h2 id="branch-details" class="text-3xl font-bold mb-4 text-gray-800"></h2>
+            <div class="flex border-b mb-4">
+                <div class="tab active" data-tab="summary">Summary</div>
+                <div class="tab" data-tab="sheets">Sheets</div>
+            </div>
+            <div id="summary-tab" class="tab-content active">
+                <h3 class="text-xl font-semibold mb-2">Infographics</h3>
+                <img id="pie-chart" class="infographic-img" alt="Pie Chart">
+                <img id="bar-chart" class="infographic-img" alt="Bar Chart">
+                <img id="line-chart" class="infographic-img" alt="Line Chart">
+            </div>
+            <div id="sheets-tab" class="tab-content">
+                <div id="sheets-content" class="overflow-x-auto"></div>
+            </div>
+            <a id="download-btn" class="download-btn mt-4 inline-block">Download Excel</a>
+        </div>
+    </section>
+
+    <script>
+        let pyodide;
+        let excelData;
+
+        async function loadPyodideAndRun() {
+            pyodide = await loadPyodide();
+            await pyodide.loadPackage(['pandas', 'matplotlib', 'openpyxl', 'numpy']);
+            await pyodide.runPythonAsync(`
+import pandas as pd
+import openpyxl
+from openpyxl import Workbook
+from openpyxl.utils.dataframe import dataframe_to_rows
+from openpyxl.styles import PatternFill, Font, Border, Side, Alignment
+import matplotlib.pyplot as plt
+from datetime import datetime, timedelta
+import random
+import numpy as np
+import js
+import io
+import base64
+from pyodide.ffi import to_js
+
+# Dummy data for the specified GLs
+balance_sheet = {
+    'GL_CODE': ['2001', '2002', '2003', '4001', '1001', '1002', '1003', '1004', '2004', '2005'],
+    'GL_NAME': [
+        'WHT PAYABLE CASA STATE',
+        'UNCLMD ITEMS OTHER LIAB SYSTEM G',
+        'A/C PAYABLE - ATM OVERAGED ITEMS',
+        'POSTAGE STAMP-OTHERS',
+        'BLANK DEBIT CARD',
+        'STAMP DUTY INVENTORY',
+        'FIXED ASSETS - PLANT & EQUIP',
+        'FIXED ASSETS - COMPUTER HARDWARE',
+        'VAT PAYABLE ON CARD PRODUCTS',
+        'HEAD OFFICE TRANSIT'
+    ],
+    'GL_BALANCE': [15000, 8000, 12000, 5000, 3000, 4500, 20000, 18000, 9000, 25000],
+    'CATEGORY': ['Liabilities', 'Liabilities', 'Liabilities', 'Expenses', 'Assets', 'Assets', 'Assets', 'Assets', 'Liabilities', 'Liabilities']
+}
+
+# Dummy GL spool makeup (some will balance, some will not)
+gl_spool_makeup = {
+    '2001': [
+        {'DATE': '2025-02-20', 'DESCRIPTION': 'Tax Withholding', 'AMOUNT': 10000},
+        {'DATE': '2025-02-21', 'DESCRIPTION': 'Adjustment', 'AMOUNT': 4000}
+    ],
+    '2002': [
+        {'DATE': '2025-02-20', 'DESCRIPTION': 'Unclaimed Deposit', 'AMOUNT': 5000},
+        {'DATE': '2025-02-21', 'DESCRIPTION': 'Unclaimed Fee', 'AMOUNT': 3000}
+    ],
+    '2003': [
+        {'DATE': '2025-02-20', 'DESCRIPTION': 'ATM Overage', 'AMOUNT': 7000},
+        {'DATE': '2025-02-21', 'DESCRIPTION': 'Correction', 'AMOUNT': 4000}
+    ],
+    '4001': [
+        {'DATE': '2025-02-20', 'DESCRIPTION': 'Postage Expense', 'AMOUNT': 3000},
+        {'DATE': '2025-02-21', 'DESCRIPTION': 'Stamp Purchase', 'AMOUNT': 2000}
+    ],
+    '1001': [
+        {'DATE': '2025-02-20', 'DESCRIPTION': 'Debit Card Stock', 'AMOUNT': 2000},
+        {'DATE': '2025-02-21', 'DESCRIPTION': 'New Cards', 'AMOUNT': 800}
+    ],
+    '1002': [
+        {'DATE': '2025-02-20', 'DESCRIPTION': 'Stamp Duty Stock', 'AMOUNT': 4000},
+        {'DATE': '2025-02-21', 'DESCRIPTION': 'Additional Stock', 'AMOUNT': 600}
+    ],
+    '1003': [
+        {'DATE': '2025-02-20', 'DESCRIPTION': 'Equipment Purchase', 'AMOUNT': 12000},
+        {'DATE': '2025-02-21', 'DESCRIPTION': 'Plant Upgrade', 'AMOUNT': 8000}
+    ],
+    '1004': [
+        {'DATE': '2025-02-20', 'DESCRIPTION': 'Hardware Purchase', 'AMOUNT': 10000},
+        {'DATE': '2025-02-21', 'DESCRIPTION': 'Server Upgrade', 'AMOUNT': 7000}
+    ],
+    '2004': [
+        {'DATE': '2025-02-20', 'DESCRIPTION': 'VAT on Cards', 'AMOUNT': 6000},
+        {'DATE': '2025-02-21', 'DESCRIPTION': 'VAT Adjustment', 'AMOUNT': 3000}
+    ],
+    '2005': [
+        {'DATE': '2025-02-20', 'DESCRIPTION': 'Transit Payment', 'AMOUNT': 15000},
+        {'DATE': '2025-02-21', 'DESCRIPTION': 'Transit Adjustment', 'AMOUNT': 9000}
+    ]
+}
+
+# Color mapping for categories
+category_colors = {
+    'Assets': '00FF00',
+    'Liabilities': 'FF0000',
+    'Income': '0000FF',
+    'Expenses': 'FFA500'
+}
+
+# Initialize Excel workbook
+wb = Workbook()
+wb.remove(wb.active)
+
+# Summary data for exceptions
+summary_exceptions = []
+
+# Process each GL
+for idx, (gl_code, gl_name, gl_balance, category) in enumerate(zip(balance_sheet['GL_CODE'], balance_sheet['GL_NAME'], balance_sheet['GL_BALANCE'], balance_sheet['CATEGORY'])):
+    makeup = gl_spool_makeup.get(gl_code, [])
+    makeup_total = sum(item['AMOUNT'] for item in makeup)
+    difference = gl_balance - makeup_total
+
+    recon_data = []
+    for item in makeup:
+        date = datetime.strptime(item['DATE'], '%Y-%m-%d')
+        days_outstanding = (datetime(2025, 2, 28) - date).days
+        recon_data.append({
+            'DATE': item['DATE'],
+            'DESCRIPTION': item['DESCRIPTION'],
+            'AMOUNT': item['AMOUNT'],
+            'AGE': days_outstanding,
+            'IR_REF_NUMBER': f'IR{random.randint(1000, 9999)}',
+            'CLEAR_DETAILED_DESCRIPTION': item['DESCRIPTION'],
+            'EXPECTED_DATE_FOR_RESOLUTION': (datetime(2025, 2, 28) + timedelta(days=7)).strftime('%Y-%m-%d'),
+            'RESPONSIBLE_OFFICER': f'Officer_{random.randint(1, 5)}'
+        })
+
+    if difference != 0:
+        summary_exceptions.append({
+            'GL_CODE': gl_code,
+            'GL_NAME': gl_name,
+            'DIFFERENCE': difference,
+            'CATEGORY': category,
+            'REASON': 'Makeup does not match GL balance'
+        })
+
+    df = pd.DataFrame(recon_data)
+    df = df[['DATE', 'DESCRIPTION', 'AMOUNT', 'AGE', 'IR_REF_NUMBER', 'CLEAR_DETAILED_DESCRIPTION', 
+             'EXPECTED_DATE_FOR_RESOLUTION', 'RESPONSIBLE_OFFICER']]
+
+    summary_row = pd.DataFrame([{
+        'DATE': '', 'DESCRIPTION': 'GL BALANCE', 'AMOUNT': gl_balance,
+        'AGE': '', 'IR_REF_NUMBER': '', 'CLEAR_DETAILED_DESCRIPTION': '',
+        'EXPECTED_DATE_FOR_RESOLUTION': '', 'RESPONSIBLE_OFFICER': ''
+    }])
+    makeup_row = pd.DataFrame([{
+        'DATE': '', 'DESCRIPTION': 'MAKEUP TOTAL', 'AMOUNT': makeup_total,
+        'AGE': '', 'IR_REF_NUMBER': '', 'CLEAR_DETAILED_DESCRIPTION': '',
+        'EXPECTED_DATE_FOR_RESOLUTION': '', 'RESPONSIBLE_OFFICER': ''
+    }])
+    diff_row = pd.DataFrame([{
+        'DATE': '', 'DESCRIPTION': 'DIFFERENCE', 'AMOUNT': difference,
+        'AGE': '', 'IR_REF_NUMBER': '', 'CLEAR_DETAILED_DESCRIPTION': '',
+        'EXPECTED_DATE_FOR_RESOLUTION': '', 'RESPONSIBLE_OFFICER': ''
+    }])
+    df = pd.concat([df, summary_row, makeup_row, diff_row], ignore_index=True)
+
+    ws = wb.create_sheet(title=f'GL_{gl_code}')
+    for r in dataframe_to_rows(df, index=False, header=True):
+        ws.append(r)
+
+    header_fill = PatternFill(start_color=category_colors[category], end_color=category_colors[category], fill_type='solid')
+    header_font = Font(bold=True, color='FFFFFF')
+    border = Border(left=Side(style='thin'), right=Side(style='thin'), top=Side(style='thin'), bottom=Side(style='thin'))
+    for cell in ws[1]:
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.border = border
+        cell.alignment = Alignment(horizontal='center')
+
+    diff_fill = PatternFill(start_color='FFFF00', end_color='FFFF00', fill_type='solid')
+    for cell in ws[ws.max_row]:
+        cell.fill = diff_fill
+        cell.border = border
+
+    for col in ws.columns:
+        max_length = 0
+        column = col[0].column_letter
+        for cell in col:
+            try:
+                if len(str(cell.value)) > max_length:
+                    max_length = len(str(cell.value))
+            except:
+                pass
+        adjusted_width = (max_length + 2)
+        ws.column_dimensions[column].width = adjusted_width
+
+# Create summary sheet
+summary_ws = wb.create_sheet(title='Summary', index=0)
+summary_df = pd.DataFrame(summary_exceptions)
+for r in dataframe_to_rows(summary_df, index=False, header=True):
+    summary_ws.append(r)
+
+for cell in summary_ws[1]:
+    cell.fill = PatternFill(start_color='800080', end_color='800080', fill_type='solid')
+    cell.font = Font(bold=True, color='FFFFFF')
+    cell.border = border
+    cell.alignment = Alignment(horizontal='center')
+
+# Generate charts
+charts = {}
+if summary_exceptions:
+    categories = list(category_colors.keys())
+    cat_differences = [sum(e['DIFFERENCE'] for e in summary_exceptions if e['CATEGORY'] == cat) for cat in categories]
+    plt.figure(figsize=(6, 6))
+    plt.pie(cat_differences, labels=categories, colors=[f'#{category_colors[cat]}' for cat in categories], autopct='%1.1f%%')
+    plt.title('Differences by Category')
+    buf = io.BytesIO()
+    plt.savefig(buf, format='png')
+    buf.seek(0)
+    charts['pie'] = base64.b64encode(buf.getvalue()).decode('utf-8')
+    plt.close()
+
+    gl_codes = [e['GL_CODE'] for e in summary_exceptions]
+    differences = [e['DIFFERENCE'] for e in summary_exceptions]
+    gl_names = [e['GL_NAME'] for e in summary_exceptions]
+    gl_categories = [e['CATEGORY'] for e in summary_exceptions]
+    colors = [f'#{category_colors[cat]}' for cat in gl_categories]
+    plt.figure(figsize=(10, 6))
+    plt.bar(gl_codes, differences, color=colors)
+    plt.title('Differences per GL')
+    plt.xlabel('GL Code')
+    plt.ylabel('Difference Amount')
+    plt.xticks(ticks=range(len(gl_codes)), labels=gl_names, rotation=45, ha='right')
+    plt.tight_layout()
+    buf = io.BytesIO()
+    plt.savefig(buf, format='png')
+    buf.seek(0)
+    charts['bar'] = base64.b64encode(buf.getvalue()).decode('utf-8')
+    plt.close()
+
+    cumulative_diffs = np.cumsum(differences)
+    plt.figure(figsize=(10, 6))
+    plt.plot(range(len(gl_codes)), cumulative_diffs, color='#FFA500', marker='o')
+    plt.title('Cumulative Differences')
+    plt.xlabel('GL Code')
+    plt.ylabel('Cumulative Difference')
+    plt.xticks(ticks=range(len(gl_codes)), labels=gl_names, rotation=45, ha='right')
+    plt.grid(True)
+    plt.tight_layout()
+    buf = io.BytesIO()
+    plt.savefig(buf, format='png')
+    buf.seek(0)
+    charts['line'] = base64.b64encode(buf.getvalue()).decode('utf-8')
+    plt.close()
+
+# Save Excel to bytes
+excel_buffer = io.BytesIO()
+wb.save(excel_buffer)
+excel_buffer.seek(0)
+excel_b64 = base64.b64encode(excel_buffer.getvalue()).decode('utf-8')
+
+# Prepare sheets data for display
+sheets_data = {}
+for gl_code in balance_sheet['GL_CODE']:
+    df = pd.DataFrame([
+        [item['DATE'], item['DESCRIPTION'], item['AMOUNT'], item['AGE'], item['IR_REF_NUMBER'], 
+         item['CLEAR_DETAILED_DESCRIPTION'], item['EXPECTED_DATE_FOR_RESOLUTION'], item['RESPONSIBLE_OFFICER']]
+        for item in gl_spool_makeup[gl_code]
+    ], columns=['DATE', 'DESCRIPTION', 'AMOUNT', 'AGE', 'IR_REF_NUMBER', 'CLEAR_DETAILED_DESCRIPTION', 
+                'EXPECTED_DATE_FOR_RESOLUTION', 'RESPONSIBLE_OFFICER'])
+    sheets_data[gl_code] = df.to_html(classes='table-auto border-collapse border border-gray-300', index=False)
+
+# Export results
+result = {
+    'charts': charts,
+    'excel_b64': excel_b64,
+    'sheets_data': sheets_data,
+    'summary_data': summary_df.to_html(classes='table-auto border-collapse border border-gray-300', index=False)
+}
+result
+            `).then(result => {
+                // Display reconciliation message
+                document.getElementById('reconcile-message').classList.remove('hidden');
+
+                // Store Excel data for download
+                excelData = result.excel_b64;
+
+                // Handle View Results
+                document.getElementById('view-results-btn').addEventListener('click', () => {
+                    document.getElementById('hero').style.display = 'none';
+                    document.getElementById('results').style.display = 'block';
+
+                    // Display branch details
+                    const bank = document.getElementById('bank').value;
+                    const branch = document.getElementById('branch').value;
+                    const period = document.getElementById('period').value;
+                    document.getElementById('branch-details').innerText = `${bank} - ${branch} (${period})`;
+
+                    // Display charts
+                    document.getElementById('pie-chart').src = `data:image/png;base64,${result.charts.pie}`;
+                    document.getElementById('bar-chart').src = `data:image/png;base64,${result.charts.bar}`;
+                    document.getElementById('line-chart').src = `data:image/png;base64,${result.charts.line}`;
+
+                    // Display sheets
+                    let sheetsHtml = '';
+                    for (const [gl_code, html] of Object.entries(result.sheets_data)) {
+                        sheetsHtml += `<h3 class="text-lg font-semibold mt-4">GL ${gl_code}</h3>${html}`;
+                    }
+                    document.getElementById('sheets-content').innerHTML = sheetsHtml;
+
+                    // Setup download button
+                    const downloadBtn = document.getElementById('download-btn');
+                    downloadBtn.href = `data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,${excelData}`;
+                    downloadBtn.download = 'gl_reconciliation_report.xlsx';
+                });
+            });
+        }
+
+        // Handle reconcile button
+        document.getElementById('reconcile-btn').addEventListener('click', () => {
+            loadPyodideAndRun();
+        });
+
+        // Handle tab switching
+        document.querySelectorAll('.tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+                tab.classList.add('active');
+                document.getElementById(`${tab.dataset.tab}-tab`).classList.add('active');
+            });
+        });
+    </script>
+</body>
+</html>
