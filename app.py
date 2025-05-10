@@ -8,6 +8,7 @@ Original file is located at
 """
 
 from flask import Flask, jsonify
+from flask_cors import CORS
 import pandas as pd
 import openpyxl
 from openpyxl import Workbook
@@ -21,6 +22,7 @@ import io
 import base64
 
 app = Flask(__name__)
+CORS(app)  # Add this line to enable CORS for all routes
 
 # Dummy data for the specified GLs
 balance_sheet = {
